@@ -9,7 +9,7 @@ from aiogram.dispatcher.filters import Text
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import State, StatesGroup
-
+from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 API_TOKEN = 'Secret TOKEN'
 
@@ -98,7 +98,7 @@ async def additem(message: types.Message, state: FSMContext):
 async def helpcmd(message: types.Message):
     await bot.send_message(message.chat.id, "*Current states* \n/additem \n*Commands*\n/add - add a task\n/show - show the current list\n/rmlist - remove the list\n/exit - finish bot", parse_mode="Markdown")
 
-@dp.message_handler(commands=['show'], state=Form.list)
+@dp.message_handler(commands=['showit'], state=Form.list)
 async def process_show_command(message, state: FSMContext):
     cur_list = None
     async with state.proxy() as data:
@@ -116,10 +116,15 @@ async def process_show_all_command(message, state: FSMContext):
 
 @dp.message_handler(commands=['select'], state=Form.menu)
 async def process_choose_command(message, state: FSMContext):
+    cur_list = None
     async with state.proxy() as data:
+        if data.get('lists', None) is None:
+            return await bot.send_message(message.chat.id, "No lists")
+        cur_list = data['lists']
         data['current_list'] = int(message.text[7:])
     await Form.list.set()
     await bot.send_message(message.chat.id, "Selected list #{}".format(int(message.text[7:])))
+    await bot.send_message(message.chat.id, str(cur_list[int(message.text[7:])]))
 
 @dp.message_handler(commands=['remove'], state=Form.list)
 async def process_delete_command(message, state: FSMContext):
@@ -131,16 +136,53 @@ async def process_delete_command(message, state: FSMContext):
         cur_list = data['lists'][data['current_list']]
     await bot.send_message(message.chat.id, str(cur_list))
 
-# @dp.message_handler(commands=['rmlist'], state=Form.menu)
-# async def process_rmlist_command(message, state: FSMContext):
+@dp.message_handler(commands=['rmlist'], state=Form.menu)
+async def process_rmlist_command(message, state: FSMContext):
+    async with state.proxy() as data:
+        if data['lists'].get(int(message.text[7:]), None) is None:
+            return await bot.send_message(message.chat.id, "No such list")
+        del_list = data['lists'].pop(int(message.text[7:]))
+    await bot.send_message(message.chat.id, "List {} has been deleted".format(del_list), parse_mode="Markdown")
+
+@dp.message_handler(commands=['selectit'], state=Form.list)
+async def selectt(message, state: FSMContext):
+    cur_item = None
+    cur_list = None
+    async with state.proxy() as data:
+        # cur_list = data['lists'][data['current_list']]
+        if data.get('lists', None) is None:
+            return await bot.send_message(message.chat.id, "No lists")
+        if data.get('current_list', None) is None:
+            return await bot.send_message(message.chat.id, "No selected list")
+        if data['lists'].get(data['current_list'], None) is None:
+            return await bot.send_message(message.chat.id, "No item")
+        cur_list = data['lists'][data['current_list']]
+        if cur_list.get(int(message.text[9:]), None) is None:
+            return await bot.send_message(message.chat.id, "No selected item")
+        cur_item = cur_list[int(message.text[9:])]
+        data['cur_item'] = int(message.text[9:])
+        await bot.send_message(message.chat.id, "Selected item #{}".format(int(message.text[9:])))
+        await bot.send_message(message.chat.id, str(cur_item)) 
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        keyboard.add(types.InlineKeyboardButton(text="Pass ✅", callback_data="operpass"))
+        await message.answer("If you finish the task, press 'Pass' button!", reply_markup=keyboard)
+
+@dp.callback_query_handler(text="operpass")
+async def send_operpass(call: types.CallbackQuery):
+    await call.message.answer("Well Done! Keep it up, buddy! Send '/show' command to exit the task window")
+    await call.answer()
+
+# @dp.callback_query_handler(text="operpass")
+# @dp.message_handler(commands=['remove'], state=Form.list)
+# async def process_delete_command(message, state: FSMContext):
 #     cur_list = None
 #     async with state.proxy() as data:
-#         if data['lists'].get(int(message.text), None) is None:
-#             return await bot.send_message(message.chat.id, "No such list")
-#         data['lists'].pop(cur_list)
-#         cur_list = data['lists']
-#     await bot.send_message(message.chat.id, "List '{}' has been deleted".format(int(message.text[7:])))
-
+#         if data['lists'][data['current_list']].get(int(message.text[7:]), None) is None:
+#             return await bot.send_message(message.chat.id, "No such item")
+#         data['lists'][data['current_list']].pop(int(message.text[7:]))
+#         cur_list = data['lists'][data['current_list']]
+#     await bot.send_message(message.chat.id, str(cur_list))
+    
 @dp.message_handler(commands=['exit'], state='*')
 async def exit_command(message: types.Message):
     await bot.send_message(message.chat.id, "Thanks for using @TaskioBot, {}! See you soon, little hero!".format(message.from_user.first_name))
